@@ -1,0 +1,414 @@
+name: realtime-open-chat-infra
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.10.3
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD: >-
+      python -c "import os, sys; from pathlib import Path; from urllib.parse import quote_plus; password = quote_plus(Path('/run/secrets/airflow_postgres_password').read_text().strip()); sys.stdout.write(f\"postgresql+psycopg2://{os.environ['AIRFLOW_POSTGRES_USER']}:{password}@airflow-postgres:5432/{os.environ['AIRFLOW_POSTGRES_DB']}\")"
+    AIRFLOW__WEBSERVER__BASE_URL: https://localhost/airflow
+    AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX: "true"
+    AIRFLOW__WEBSERVER__WEB_SERVER_PORT: "8080"
+    AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:?AIRFLOW_ADMIN_USER is required}
+    AIRFLOW_POSTGRES_DB: ${AIRFLOW_POSTGRES_DB:?AIRFLOW_POSTGRES_DB is required}
+    AIRFLOW_POSTGRES_USER: ${AIRFLOW_POSTGRES_USER:?AIRFLOW_POSTGRES_USER is required}
+    CHAT_POSTGRES_HOST: postgres
+    CHAT_POSTGRES_PORT: "5432"
+    CHAT_POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    CHAT_POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+    CHAT_POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags:ro
+  secrets:
+    - postgres_password
+    - airflow_postgres_password
+    - airflow_admin_password
+  networks:
+    - internal
+  depends_on:
+    airflow-postgres:
+      condition: service_healthy
+
+services:
+  nginx:
+    build:
+      context: ./services/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
+      - ./services/web:/usr/share/nginx/html:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+      grafana:
+        condition: service_started
+    networks:
+      - public
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://127.0.0.1/api/health >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./services
+      dockerfile: api/Dockerfile
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8443"
+      - --ssl-certfile
+      - /certs/api.crt
+      - --ssl-keyfile
+      - /certs/api.key
+      - --proxy-headers
+      - --forwarded-allow-ips=*
+    environment:
+      APP_NAME: realtime-open-chat-infra
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS is required}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:?KAFKA_TOPIC is required}
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import ssl, urllib.request; ctx=ssl.create_default_context(cafile='/certs/ca.crt'); urllib.request.urlopen('https://localhost:8443/api/health', context=ctx, timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  event-consumer:
+    build:
+      context: ./services
+      dockerfile: event-consumer/Dockerfile
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9443"
+      - --ssl-certfile
+      - /certs/event-consumer.crt
+      - --ssl-keyfile
+      - /certs/event-consumer.key
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS is required}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:?KAFKA_TOPIC is required}
+      EVENT_CONSUMER_GROUP: ${EVENT_CONSUMER_GROUP:?EVENT_CONSUMER_GROUP is required}
+    volumes:
+      - ./certs:/certs:ro
+    secrets:
+      - postgres_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import ssl, urllib.request; ctx=ssl.create_default_context(cafile='/certs/ca.crt'); urllib.request.urlopen('https://localhost:9443/health', context=ctx, timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  chat-history-consumer:
+    build:
+      context: ./services
+      dockerfile: chat-history-consumer/Dockerfile
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9443"
+      - --ssl-certfile
+      - /certs/chat-history-consumer.crt
+      - --ssl-keyfile
+      - /certs/chat-history-consumer.key
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS is required}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:?KAFKA_TOPIC is required}
+      CHAT_HISTORY_CONSUMER_GROUP: ${CHAT_HISTORY_CONSUMER_GROUP:?CHAT_HISTORY_CONSUMER_GROUP is required}
+    volumes:
+      - ./certs:/certs:ro
+    secrets:
+      - postgres_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import ssl, urllib.request; ctx=ssl.create_default_context(cafile='/certs/ca.crt'); urllib.request.urlopen('https://localhost:9443/health', context=ctx, timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  moderation-consumer:
+    build:
+      context: ./services
+      dockerfile: moderation-consumer/Dockerfile
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9443"
+      - --ssl-certfile
+      - /certs/moderation-consumer.crt
+      - --ssl-keyfile
+      - /certs/moderation-consumer.key
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS is required}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:?KAFKA_TOPIC is required}
+      MODERATION_CONSUMER_GROUP: ${MODERATION_CONSUMER_GROUP:?MODERATION_CONSUMER_GROUP is required}
+      MODERATION_BLOCKED_WORDS: ${MODERATION_BLOCKED_WORDS:?MODERATION_BLOCKED_WORDS is required}
+      MODERATION_MAX_MESSAGE_LENGTH: ${MODERATION_MAX_MESSAGE_LENGTH:?MODERATION_MAX_MESSAGE_LENGTH is required}
+      MODERATION_DUPLICATE_WINDOW_SECONDS: ${MODERATION_DUPLICATE_WINDOW_SECONDS:?MODERATION_DUPLICATE_WINDOW_SECONDS is required}
+      MODERATION_FLOOD_WINDOW_SECONDS: ${MODERATION_FLOOD_WINDOW_SECONDS:?MODERATION_FLOOD_WINDOW_SECONDS is required}
+      MODERATION_FLOOD_MESSAGE_THRESHOLD: ${MODERATION_FLOOD_MESSAGE_THRESHOLD:?MODERATION_FLOOD_MESSAGE_THRESHOLD is required}
+    volumes:
+      - ./certs:/certs:ro
+    secrets:
+      - postgres_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import ssl, urllib.request; ctx=ssl.create_default_context(cafile='/certs/ca.crt'); urllib.request.urlopen('https://localhost:9443/health', context=ctx, timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    secrets:
+      - postgres_password
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.9.1
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  kafka-init:
+    image: apache/kafka:3.9.1
+    command: ["/bin/bash", "-ec", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic \"$${KAFKA_TOPIC}\" --partitions 1 --replication-factor 1"]
+    environment:
+      KAFKA_TOPIC: ${KAFKA_TOPIC:?KAFKA_TOPIC is required}
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: "no"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.external-url=https://localhost/prometheus/
+      - --web.route-prefix=/prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./certs:/etc/prometheus/certs:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      api:
+        condition: service_healthy
+      event-consumer:
+        condition: service_healthy
+      chat-history-consumer:
+        condition: service_healthy
+      moderation-consumer:
+        condition: service_healthy
+    networks:
+      - internal
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    entrypoint:
+      - /bin/sh
+      - -c
+      - export POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password)"; exec /run.sh
+    environment:
+      GF_SERVER_ROOT_URL: https://localhost/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER is required}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    secrets:
+      - grafana_admin_password
+      - postgres_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
+  airflow-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${AIRFLOW_POSTGRES_DB:?AIRFLOW_POSTGRES_DB is required}
+      POSTGRES_USER: ${AIRFLOW_POSTGRES_USER:?AIRFLOW_POSTGRES_USER is required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/airflow_postgres_password
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+    secrets:
+      - airflow_postgres_password
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  airflow-init:
+    <<: *airflow-common
+    command: >
+      bash -c '
+        airflow db migrate;
+        airflow users create --username "$${AIRFLOW_ADMIN_USER}" --password "$$(cat /run/secrets/airflow_admin_password)" --firstname Local --lastname Admin --role Admin --email admin@example.com ||
+        airflow users reset-password --username "$${AIRFLOW_ADMIN_USER}" --password "$$(cat /run/secrets/airflow_admin_password)"
+      '
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: >
+      bash -c '
+        exec airflow webserver
+      '
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: >
+      bash -c '
+        exec airflow scheduler
+      '
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+networks:
+  public:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true
+
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:?POSTGRES_PASSWORD_FILE is required}
+  grafana_admin_password:
+    file: ${GRAFANA_ADMIN_PASSWORD_FILE:?GRAFANA_ADMIN_PASSWORD_FILE is required}
+  airflow_admin_password:
+    file: ${AIRFLOW_ADMIN_PASSWORD_FILE:?AIRFLOW_ADMIN_PASSWORD_FILE is required}
+  airflow_postgres_password:
+    file: ${AIRFLOW_POSTGRES_PASSWORD_FILE:?AIRFLOW_POSTGRES_PASSWORD_FILE is required}
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:
+  prometheus_data:
+  grafana_data:
+  airflow_postgres_data:

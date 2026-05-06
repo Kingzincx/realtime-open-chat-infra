@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Realtime Open Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="chat-panel" aria-label="Realtime Open Chat">
+        <header class="topbar">
+          <div class="brand">
+            <span class="logo" aria-hidden="true"></span>
+            <div>
+              <h1>Realtime Open Chat</h1>
+              <p id="connection-status"><span class="status-dot" data-state="off"></span>Disconnected</p>
+            </div>
+          </div>
+          <div class="topbar-actions">
+            <span class="secure-badge">HTTPS / WSS</span>
+            <button id="theme-toggle" type="button" class="icon-button" aria-label="Toggle theme" title="Toggle theme">
+              <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4"/>
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+              </svg>
+              <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <form id="connect-form" class="connect-row">
+          <input id="username" name="username" type="text" maxlength="80" autocomplete="nickname" placeholder="Your name" required>
+          <button id="connect-button" type="submit">Connect</button>
+          <button id="disconnect-button" type="button" class="secondary-button" disabled>Disconnect</button>
+        </form>
+
+        <div id="messages" class="messages" aria-live="polite">
+          <div class="empty-state">
+            <p>No messages yet.</p>
+            <span>Connect with a name to start the conversation.</span>
+          </div>
+        </div>
+
+        <form id="message-form" class="message-row">
+          <input id="message" name="message" type="text" maxlength="1000" autocomplete="off" placeholder="Write a message" disabled required>
+          <button id="send-button" type="submit" disabled aria-label="Send message">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6"/>
+            </svg>
+          </button>
+        </form>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,189 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": { "type": "postgres", "uid": "chat-postgres" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "chat-postgres" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT hour AS \"time\", total_messages AS value FROM chat_hourly_stats WHERE $__timeFilter(hour) ORDER BY hour;",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest Messages Per Hour",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "chat-postgres" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "chat-postgres" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT hour AS \"time\", total_joins AS value FROM chat_hourly_stats WHERE $__timeFilter(hour) ORDER BY hour;",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest Joins Per Hour",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "chat-postgres" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "chat-postgres" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT hour AS \"time\", total_leaves AS value FROM chat_hourly_stats WHERE $__timeFilter(hour) ORDER BY hour;",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest Leaves Per Hour",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "chat-postgres" },
+      "fieldConfig": { "defaults": { "unit": "dateTimeAsIso" }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "chat-postgres" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT hour AS \"time\", extract(epoch from hour) * 1000 AS value FROM chat_hourly_stats WHERE $__timeFilter(hour) ORDER BY hour;",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest Aggregated Hour",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "chat-postgres" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 4 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "chat-postgres" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT hour AS \"time\", total_messages AS \"messages\", total_joins AS \"joins\", total_leaves AS \"leaves\" FROM chat_hourly_stats WHERE $__timeFilter(hour) ORDER BY hour;",
+          "refId": "A"
+        }
+      ],
+      "title": "Hourly Chat Activity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "chat-postgres" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "chat-postgres" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT hour AS \"time\", total_joins - total_leaves AS \"net presence change\" FROM chat_hourly_stats WHERE $__timeFilter(hour) ORDER BY hour;",
+          "refId": "A"
+        }
+      ],
+      "title": "Hourly Net Presence Change",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "chat-postgres" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "id": 7,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "chat-postgres" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT hour, total_messages, total_joins, total_leaves, created_at AS calculated_at FROM chat_hourly_stats ORDER BY hour DESC LIMIT 24;",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest Hourly Aggregates",
+      "type": "table"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["chat", "analytics", "airflow", "postgres"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Chat Hourly Analytics",
+  "uid": "chat-hourly-analytics",
+  "version": 1,
+  "weekStart": ""
+}

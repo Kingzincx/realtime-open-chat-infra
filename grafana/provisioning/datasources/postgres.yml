@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: Chat PostgreSQL
+    uid: chat-postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    user: $POSTGRES_USER
+    editable: true
+    jsonData:
+      database: $POSTGRES_DB
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: $POSTGRES_PASSWORD
